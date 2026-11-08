@@ -53,7 +53,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 "call": {"schema": "SQLGenerationModel"},
                 "endpoint": "chat",
                 "method": "POST",
-                "upstream": "https://res.openai.azure.com",
+                "upstream": "https://llm.example.com",
                 "path": "/openai/v1/chat/completions",
                 "request": {"messages": []},
                 "response": {"choices": []},

@@ -90,18 +90,18 @@ def test_tracing_executor_carries_the_trace_but_plain_threads_do_not() -> None:
 
 def test_route_is_a_no_op_when_tracing_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LLM_TRACE_PROXY_URL", raising=False)
-    url = "https://res.openai.azure.com/openai/v1/chat/completions"
+    url = "https://llm.example.com/openai/v1/chat/completions"
     assert transport.route(url) == (url, {})
     assert transport.sync_http_client() is None
     assert transport.async_http_client() is None
 
 
 def test_route_targets_the_proxy_and_names_the_upstream(proxy: str) -> None:
-    url = "https://res.openai.azure.com/openai/v1/embeddings?api-version=1"
+    url = "https://llm.example.com/openai/v1/embeddings?api-version=1"
     with tc.start_trace("ingest", database_name="wwi"):
         target, headers = transport.route(url)
     assert target == f"{proxy}/forward/openai/v1/embeddings?api-version=1"
-    assert headers[transport.UPSTREAM_HEADER] == "https://res.openai.azure.com"
+    assert headers[transport.UPSTREAM_HEADER] == "https://llm.example.com"
     decoded = transport.decode_trace(headers[transport.TRACE_HEADER])
     assert decoded["kind"] == "ingest" and decoded["database_name"] == "wwi"
 
@@ -132,7 +132,7 @@ def test_the_httpx_hook_reroutes_a_real_request(proxy: str) -> None:
         event_hooks={"request": [transport._reroute]},
     )
     with tc.start_trace("chat"), tc.call_metadata(schema="SQLGenerationModel"):
-        client.post("https://res.openai.azure.com/openai/v1/chat/completions", json={})
+        client.post("https://llm.example.com/openai/v1/chat/completions", json={})
 
     [request] = sent
     assert str(request.url) == f"{proxy}/forward/openai/v1/chat/completions"

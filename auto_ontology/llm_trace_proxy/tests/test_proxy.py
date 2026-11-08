@@ -17,7 +17,7 @@ from auto_ontology.llm_trace_proxy import capture
 from auto_ontology.tracing import context as tc
 from auto_ontology.tracing import transport
 
-UPSTREAM = "https://res.openai.azure.com"
+UPSTREAM = "https://llm.example.com"
 
 
 def test_endpoints_are_classified_from_the_path() -> None:

@@ -392,9 +392,8 @@ const TraceDetailPanel = ({ summary }: { summary: TraceSummary }) => {
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
+		// The panel is keyed by trace id, so state starts empty for each trace.
 		let cancelled = false;
-		setCalls(null);
-		setError(null);
 		tracesApi.get(summary.trace_id).then((result) => {
 			if (cancelled) return;
 			if (result.error) setError(result.message ?? 'Failed to load the trace.');
