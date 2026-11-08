@@ -18,6 +18,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
+from auto_ontology.tracing import transport as trace_transport
+from auto_ontology.tracing.context import call_metadata
 from auto_ontology.utils.model_config import resolve
 
 logger = logging.getLogger(__name__)
@@ -192,6 +194,9 @@ class _TimeoutSession(_requests.Session):
 
     def request(self, method, url, **kwargs):
         kwargs.setdefault("timeout", self._default_timeout)
+        url, trace_headers = trace_transport.route(url)
+        if trace_headers:
+            kwargs["headers"] = {**(kwargs.get("headers") or {}), **trace_headers}
         return super().request(method, url, **kwargs)
 
 
@@ -239,6 +244,10 @@ def _build_client(
             max_tokens=max_tokens,
             timeout=LLM_INVOKE_TIMEOUT_S,
             max_retries=0,
+            # None unless LLM_TRACE_PROXY_URL is set: then requests are routed
+            # through the trace proxy with the current trace context.
+            http_client=trace_transport.sync_http_client(),
+            http_async_client=trace_transport.async_http_client(),
         )
 
     from langchain_nvidia_ai_endpoints import ChatNVIDIA
@@ -363,6 +372,11 @@ def _get_reasoning_fallback_client() -> BaseChatModel:
     return _REASONING_FALLBACK_CLIENT
 
 
+def _role(llm: object) -> str:
+    """Which configured model *llm* is, for the trace: reasoning or not."""
+    return "non_reasoning" if _is_non_reasoning_client(llm) else "reasoning"
+
+
 def _reasoning_fallback_client(llm: object) -> BaseChatModel | None:
     """The reasoning client when *llm* is non-reasoning, else ``None``.
 
@@ -478,7 +492,8 @@ def _structured_output_kwargs(llm: BaseChatModel) -> dict:
 
 
 def _invoke_text_once(llm: BaseChatModel, prompt: str) -> str:
-    response = llm.invoke([HumanMessage(content=prompt)])
+    with call_metadata(wrapper="text", role=_role(llm)):
+        response = llm.invoke([HumanMessage(content=prompt)])
     content = getattr(response, "content", response)
     return content if isinstance(content, str) else str(content)
 
@@ -509,7 +524,10 @@ def _safe_invoke_text(llm: BaseChatModel, prompt: str) -> str:
     messages = [HumanMessage(content=prompt)]
     for attempt in range(RETRY_MAX_ATTEMPTS):
         try:
-            with _inflight_guard():
+            with (
+                _inflight_guard(),
+                call_metadata(wrapper="text", role=_role(llm), attempt=attempt + 1),
+            ):
                 response = llm.invoke(messages)
             content = getattr(response, "content", response)
             return content if isinstance(content, str) else str(content)
@@ -566,7 +584,16 @@ def safe_invoke_with_structured_output(
     for attempt in range(RETRY_MAX_ATTEMPTS):
         try:
             model_llm = llm.with_structured_output(schema, **structured_kwargs)
-            with _inflight_guard():
+            with (
+                _inflight_guard(),
+                call_metadata(
+                    wrapper="structured",
+                    schema=schema_name,
+                    method=structured_kwargs.get("method", "default"),
+                    role=_role(llm),
+                    attempt=attempt + 1,
+                ),
+            ):
                 result = model_llm.invoke(_system_messages_first(llm, current_messages))
         except _requests.exceptions.ReadTimeout:
             logger.error(
@@ -667,7 +694,10 @@ def invoke_with_structured_output(
         if fallback is not None:
             _log_non_reasoning_fallback(e, schema_name)
             try:
-                return safe_invoke_with_structured_output(fallback, messages, schema)
+                with call_metadata(fallback_from="non_reasoning"):
+                    return safe_invoke_with_structured_output(
+                        fallback, messages, schema
+                    )
             except Exception as e2:
                 logger.error(
                     "Reasoning LLM also failed for %s: %s: %s",

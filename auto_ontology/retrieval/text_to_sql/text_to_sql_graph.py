@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict
 
 from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableLambda
+from auto_ontology.tracing import context as trace_context
 from auto_ontology.retrieval.text_to_sql.state import (
     TextToSQLPayload,
     AgentState,
@@ -317,7 +318,9 @@ def wrap_node_with_logging(
     def wrapped(state: AgentState) -> Dict[str, Any]:
         announce_node_start(node_name)
         log_node_visit(state, node_name)
-        return fn(state)
+        # Each node is a step in the LLM trace, so its model calls group under it.
+        with trace_context.span(node_name):
+            return fn(state)
 
     return wrapped
 

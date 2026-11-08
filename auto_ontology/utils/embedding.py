@@ -25,13 +25,14 @@ import logging
 import math
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
 
 import httpx
 from openai import APIStatusError, Omit, OpenAI
 
+from auto_ontology.tracing import transport as trace_transport
+from auto_ontology.tracing.context import TracingThreadPoolExecutor, call_metadata
 from auto_ontology.utils.model_config import resolve
 from auto_ontology.vdb.records import write_embedded_rows
 
@@ -135,7 +136,9 @@ def _new_client(params: EmbedParams, http_client: httpx.Client | None = None) ->
         # placeholder here and no header at all, see _NO_AUTH.
         api_key=params.api_key or "unused",
         max_retries=_REQUEST_RETRIES,
-        http_client=http_client,
+        # The trace proxy's client when LLM_TRACE_PROXY_URL is set, else None
+        # (the OpenAI default).
+        http_client=http_client or trace_transport.sync_http_client(),
     )
 
 
@@ -185,18 +188,21 @@ def embed_texts(
     prefix = _text_prefix(params.model_name, input_type)
 
     def _embed_batch(indices: tuple[int, ...]) -> None:
-        response = client.embeddings.create(
-            model=params.model_name,
-            input=[prefix + stripped[i] for i in indices],
-            encoding_format="float",
-            extra_body={
-                "input_type": input_type,
-                "truncate": "END",
-                "modality": params.embed_modality,
-            },
-            timeout=timeout or params.request_timeout_s,
-            extra_headers=None if params.api_key else _NO_AUTH,
-        )
+        with call_metadata(
+            wrapper="embedding", input_type=input_type, batch_size=len(indices)
+        ):
+            response = client.embeddings.create(
+                model=params.model_name,
+                input=[prefix + stripped[i] for i in indices],
+                encoding_format="float",
+                extra_body={
+                    "input_type": input_type,
+                    "truncate": "END",
+                    "modality": params.embed_modality,
+                },
+                timeout=timeout or params.request_timeout_s,
+                extra_headers=None if params.api_key else _NO_AUTH,
+            )
         returned = [item.index for item in response.data]
         if sorted(returned) != list(range(len(indices))):
             # Exactly one vector per input. A missing one would leave a row
@@ -213,7 +219,7 @@ def embed_texts(
         _embed_batch(batches[0])
     else:
         workers = min(len(batches), max(1, params.nim_http_max_concurrent))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        with TracingThreadPoolExecutor(max_workers=workers) as pool:
             # list() so the first failed batch re-raises here.
             list(pool.map(_embed_batch, batches))
     return vectors

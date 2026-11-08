@@ -102,7 +102,8 @@ COPY --chown=auto_ontology:auto_ontology alembic/ ./alembic/
 COPY --chown=auto_ontology:auto_ontology alembic.ini ./
 
 # Dispatcher entrypoint: selects between the FastAPI server, the ingestion
-# service, and the one-shot schema migration based on the first arg.
+# service, the optional LLM trace proxy, and the one-shot schema migration
+# based on the first arg.
 # Defaults to auto_ontology.server.
 COPY --chmod=0755 <<'EOF' /usr/local/bin/entrypoint.sh
 #!/bin/sh
@@ -115,6 +116,11 @@ case "$mode" in
   ingestion_service)
     exec python -m auto_ontology.ingestion_service
     ;;
+  llm_trace_proxy)
+    # Optional: records model calls for the LLM Tracing page (see
+    # docker-compose.tracing.yml and auto_ontology/llm_trace_proxy).
+    exec python -m auto_ontology.llm_trace_proxy
+    ;;
   migrate)
     # Owns `public` only. Prisma owns `frontend` and migrates separately;
     # the two are independent and may run in either order.
@@ -122,7 +128,7 @@ case "$mode" in
     ;;
   *)
     echo "Unknown mode: $mode" >&2
-    echo "Usage: docker run <image> [server|ingestion_service|migrate]" >&2
+    echo "Usage: docker run <image> [server|ingestion_service|llm_trace_proxy|migrate]" >&2
     exit 2
     ;;
 esac

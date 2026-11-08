@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from types import TracebackType
 
+from auto_ontology.tracing import context as trace_context
+from auto_ontology.tracing.context import TracingThreadPoolExecutor
 from auto_ontology.dal.datasources import (
     fetch_all_tables_without_term,
     fetch_table_context,
@@ -193,15 +195,16 @@ def compile_semantic_layer(
                 len(tables),
                 table_name,
             )
-            return process_table(
-                table,
-                ctx,
-                domain_summary=summary,
-                embedder=embedder,
-                database_name=database_name,
-                probe_distinct_values=is_probe_distinct_values,
-                commit_slot=commit_slot,
-            )
+            with trace_context.span(f"table:{table_name}"):
+                return process_table(
+                    table,
+                    ctx,
+                    domain_summary=summary,
+                    embedder=embedder,
+                    database_name=database_name,
+                    probe_distinct_values=is_probe_distinct_values,
+                    commit_slot=commit_slot,
+                )
         except Exception:
             logger.exception("Unexpected error processing table %s", table_name)
             return None
@@ -213,7 +216,7 @@ def compile_semantic_layer(
     if embedder is not None:
         embedder.vdb.create_index()
 
-    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+    with TracingThreadPoolExecutor(max_workers=_WORKERS) as pool:
         futures = {
             pool.submit(_process, table, position, position + 1): table
             for position, table in enumerate(tables)

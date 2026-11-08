@@ -103,6 +103,7 @@ from auto_ontology.server.chat.conversation_dal import (
 from auto_ontology.server.chat.settings_dal import is_visualization_enabled
 from auto_ontology.server.chat.worker import PrewarmedWorker, get_pool
 from auto_ontology.server.identity import resolve_internal_user
+from auto_ontology.tracing import context as trace_context
 from auto_ontology.utils.llm_invoke import get_llm_client, get_non_reasoning_llm_client
 from auto_ontology.server.responses import ChatCancelResponse
 
@@ -237,6 +238,10 @@ class _Slot:
     # never got a query past validation has no ``sql`` event and so persists
     # none. See ``_pump``.
     last_sql: str | None = None
+    # The LLM trace this turn's model calls are recorded under (see
+    # ``auto_ontology.tracing``). Handed to the worker with the question, and
+    # re-activated in ``_pump`` for the chart step.
+    trace: trace_context.TraceContext | None = None
 
 
 # Keyed by authenticated user + conversation_id (or a per-request unique key
@@ -348,12 +353,16 @@ def _build_charts_event(slot: _Slot, answer: dict[str, Any]) -> dict[str, Any] |
     if llm is not None:
         try:
             if is_visualization_enabled():
-                charts = analyze_and_visualize(
-                    llm=llm,
-                    question=slot.question,
-                    sql=str(answer.get("sql_code") or ""),
-                    sql_response_from_db=sql_response_from_db,
-                )
+                with (
+                    trace_context.activate(slot.trace),
+                    trace_context.span("visualization"),
+                ):
+                    charts = analyze_and_visualize(
+                        llm=llm,
+                        question=slot.question,
+                        sql=str(answer.get("sql_code") or ""),
+                        sql_response_from_db=sql_response_from_db,
+                    )
         except Exception:  # noqa: BLE001 — charts are best-effort
             logger.exception("Chart generation failed")
 
@@ -652,6 +661,20 @@ async def chat_completions(
         except Exception:  # noqa: BLE001 — analytics is best-effort
             logger.exception("Failed to create stateless conversation analytics")
 
+    # One trace per turn, keyed on the analytics row when there is one so a
+    # trace can be found from the conversation it belongs to.
+    slot.trace = trace_context.TraceContext(
+        trace_id=slot.analytics_id or uuid.uuid4().hex,
+        kind="chat",
+        user_id=user_id,
+        conversation_id=str(request.conversation_id)
+        if request.conversation_id is not None
+        else None,
+        turn_id=slot.analytics_id,
+        source=http_request.headers.get("x-auto-ontology-source") or "api",
+        database_name=target_db,
+        title=request.question[:300],
+    )
     worker.submit(
         request.question,
         prediction=request.prediction,
@@ -659,6 +682,7 @@ async def chat_completions(
         subject_token=subject_token,
         conversation_history=conversation_history,
         evidence=request.evidence,
+        trace=slot.trace.to_payload(),
     )
     threading.Thread(target=_pump, args=(slot,), daemon=True).start()
     asyncio.create_task(_watch_disconnect(http_request, slot))

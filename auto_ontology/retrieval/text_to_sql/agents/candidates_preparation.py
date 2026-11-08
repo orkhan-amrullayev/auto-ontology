@@ -30,6 +30,7 @@ from typing import Any, Dict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from auto_ontology.tracing.context import TracingThreadPoolExecutor
 from auto_ontology.dal.attributes import (
     fetch_attr_column_contexts,
     find_anchor_hub_siblings,
@@ -314,7 +315,7 @@ class CandidatePreparationAgent(BaseAgent):
         # Extra-table retrieval only needs the question + entities — independent
         # of the anchor-column LLM/join-path work below. Kick it off in the
         # background so the two multi-second steps overlap instead of stacking.
-        extra_pool = ThreadPoolExecutor(max_workers=1)
+        extra_pool = TracingThreadPoolExecutor(max_workers=1)
         extra_future = extra_pool.submit(
             self._retrieve_additional_tables,
             state.get("data_retriever"),
@@ -900,7 +901,7 @@ class CandidatePreparationAgent(BaseAgent):
             )
 
         additional_tables: list[dict] = []
-        with ThreadPoolExecutor(max_workers=len(search_queries) or 1) as pool:
+        with TracingThreadPoolExecutor(max_workers=len(search_queries) or 1) as pool:
             futures = {
                 pool.submit(_fetch_tables_for_query, q): q for q in search_queries
             }

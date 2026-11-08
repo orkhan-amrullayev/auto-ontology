@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, Orkhan Amrullayev.
+# SPDX-License-Identifier: Apache-2.0
+
+# Optional LLM call tracing. Layer it on the base stack:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tracing.yml up -d
+#
+# Adds the trace proxy and points the backend, ingestion service and chat
+# workers at it, so every model call (with who/which session/which pipeline
+# step) is recorded and shown under Settings -> LLM Tracing. Leaving this file
+# out leaves the stack exactly as it was: no proxy, no recording.
+services:
+  llm-trace-proxy:
+    image: auto-ontology:latest
+    container_name: auto-ontology-llm-trace-proxy
+    restart: unless-stopped
+    command: ["llm_trace_proxy"]
+    # Internal only: the app reaches it over the compose network.
+    expose:
+      - "3004"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:3004/health/live', timeout=3).status == 200 else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_started
+      auto-ontology-migrate:
+        condition: service_completed_successfully
+
+  auto-ontology:
+    environment:
+      LLM_TRACE_PROXY_URL: http://llm-trace-proxy:3004
+    depends_on:
+      llm-trace-proxy:
+        condition: service_started
+
+  ingestion-service:
+    environment:
+      LLM_TRACE_PROXY_URL: http://llm-trace-proxy:3004
+    depends_on:
+      llm-trace-proxy:
+        condition: service_started

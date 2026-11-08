@@ -34,6 +34,7 @@ const SETTINGS_SECTION_LABELS: Record<string, string> = {
 	rules: 'Rules',
 	'semantic-input': 'Semantic Input',
 	'semantic-compilation': 'Semantic Compilation',
+	'llm-tracing': 'LLM Tracing',
 	pii: 'PII Settings',
 	'agent-settings': 'Agent Settings',
 	users: 'Users',

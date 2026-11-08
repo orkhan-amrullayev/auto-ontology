@@ -24,6 +24,8 @@ from typing import Any
 
 import httpx
 
+from auto_ontology.tracing import transport as trace_transport
+from auto_ontology.tracing.context import call_metadata
 from auto_ontology.utils.model_config import resolve
 
 # Hosted NeMo reranking endpoint — no local GPU required. Override RERANK_ENDPOINT
@@ -75,7 +77,14 @@ def _scores(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    response = httpx.post(url, json=payload, headers=headers, timeout=_TIMEOUT_S)
+    with call_metadata(wrapper="rerank", documents=len(documents)):
+        target, trace_headers = trace_transport.route(url)
+        response = httpx.post(
+            target,
+            json=payload,
+            headers={**headers, **trace_headers},
+            timeout=_TIMEOUT_S,
+        )
     response.raise_for_status()
     data = response.json()
 

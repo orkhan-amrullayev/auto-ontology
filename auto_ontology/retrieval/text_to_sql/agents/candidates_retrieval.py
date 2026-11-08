@@ -20,11 +20,12 @@ Responsibilities:
 import logging
 
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from typing import Any, Dict
 
 from langchain_core.messages import SystemMessage
 
+from auto_ontology.tracing.context import TracingThreadPoolExecutor
 from auto_ontology.catalog.constants import Labels
 
 from auto_ontology.semantic.constants import (
@@ -564,7 +565,7 @@ class CandidateRetrievalAgent(BaseAgent):
                     )
                 )
 
-            with ThreadPoolExecutor(max_workers=len(search_tasks) or 1) as pool:
+            with TracingThreadPoolExecutor(max_workers=len(search_tasks) or 1) as pool:
                 futures = {
                     pool.submit(_search_by_label, *args): key
                     for key, args in search_tasks
@@ -658,7 +659,7 @@ class CandidateRetrievalAgent(BaseAgent):
                             selected_database,
                             uncovered_entities,
                         )
-                        with ThreadPoolExecutor(
+                        with TracingThreadPoolExecutor(
                             max_workers=len(uncovered_entities)
                         ) as pool:
                             futures = {

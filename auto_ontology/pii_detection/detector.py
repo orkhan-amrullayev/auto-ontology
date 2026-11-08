@@ -8,7 +8,6 @@ import json
 import logging
 import os
 from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from typing import Protocol
 
@@ -16,6 +15,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from auto_ontology.tracing.context import TracingThreadPoolExecutor
 from auto_ontology.pii_detection.models import ColumnInput, PiiDecision, PiiStatus
 from auto_ontology.pii_detection.rules import evaluate_rules
 from auto_ontology.utils.llm_invoke import (
@@ -172,7 +172,7 @@ class PiiDetector:
             decisions = [self.detect(column) for column in unique]
         else:
             workers = min(self._max_workers, len(unique))
-            with ThreadPoolExecutor(max_workers=workers) as pool:
+            with TracingThreadPoolExecutor(max_workers=workers) as pool:
                 decisions = list(pool.map(self.detect, unique))
 
         cache = dict(zip(unique, decisions, strict=True))

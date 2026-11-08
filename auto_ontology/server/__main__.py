@@ -35,6 +35,7 @@ from auto_ontology.server.exploration.router import router as exploration_router
 from auto_ontology.server.health.router import router as health_router  # noqa: E402
 from auto_ontology.server.metadata.router import router as metadata_router  # noqa: E402
 from auto_ontology.server.rules.router import router as rules_router  # noqa: E402
+from auto_ontology.server.traces.router import router as traces_router  # noqa: E402
 from auto_ontology.server.semantic_compilation.router import (  # noqa: E402
     router as semantic_compilation_router,
 )
@@ -90,6 +91,13 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # LLM tracing is opt-in (LLM_TRACE_PROXY_URL); without it nothing is added.
+    from auto_ontology.server.identity import INTERNAL_USER_HEADER
+    from auto_ontology.tracing import transport as trace_transport
+    from auto_ontology.tracing.context import TraceRequestsMiddleware
+
+    if trace_transport.enabled():
+        app.add_middleware(TraceRequestsMiddleware, user_header=INTERNAL_USER_HEADER)
 
     app.include_router(
         datasources_router, prefix="/api", tags=["datasources", "connectors"]
@@ -103,6 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(
         semantic_compilation_router, prefix="/api", tags=["semantic-compilation"]
     )
+    app.include_router(traces_router, prefix="/api", tags=["traces"])
     app.include_router(zones_router, prefix="/api", tags=["zones"])
     app.include_router(users_router, prefix="/api", tags=["users"])
     app.include_router(tags_router, prefix="/api", tags=["tags"])

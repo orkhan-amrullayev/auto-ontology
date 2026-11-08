@@ -26,12 +26,13 @@ Algorithm
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlglot import exp
 
+from auto_ontology.tracing.context import TracingThreadPoolExecutor
 from auto_ontology.connectors import get_connectors
 from auto_ontology.connectors.base import SQLDatabase
 from auto_ontology.dal.attributes import (
@@ -264,7 +265,7 @@ def _resolve_semantic_fks(database_name: str) -> int:
             )
         return False
 
-    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+    with TracingThreadPoolExecutor(max_workers=_WORKERS) as pool:
         futures = {
             pool.submit(_resolve_one, index, col): col for index, col in llm_queue
         }

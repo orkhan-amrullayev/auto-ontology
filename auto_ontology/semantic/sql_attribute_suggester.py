@@ -20,13 +20,14 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from threading import Lock
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
+from auto_ontology.tracing.context import TracingThreadPoolExecutor
 from auto_ontology.dal.terms import fetch_table_schema_map, fetch_terms_with_sqls
 from auto_ontology.semantic.constants import SEMANTIC_SOURCE, SQL_ATTR_SOURCE_SQL
 from auto_ontology.server.sql_attributes.service import (
@@ -747,7 +748,7 @@ def suggest_sql_attributes(database_name: str) -> int:
             created.append(attr_id)
         return created
 
-    with ThreadPoolExecutor(max_workers=_TERM_WORKERS) as pool:
+    with TracingThreadPoolExecutor(max_workers=_TERM_WORKERS) as pool:
         futures = {pool.submit(_process_term, row): row for row in term_rows}
         for future in as_completed(futures):
             try:

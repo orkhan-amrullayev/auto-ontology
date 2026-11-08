@@ -141,7 +141,16 @@ def _worker_loop(
             subject_token,
             conversation_history,
             evidence,
-        ) = payload
+        ) = payload[:6]
+        # Optional 7th element: the LLM trace for this turn (see
+        # auto_ontology.tracing). Workers are reused, so it is activated per
+        # question and dropped when the question ends.
+        from auto_ontology.tracing import context as trace_context
+
+        trace_scope = trace_context.activate(
+            trace_context.restore(payload[6] if len(payload) > 6 else None)
+        )
+        trace_scope.__enter__()
         try:
             # Connections are resolved once at worker init. If that
             # lookup came back empty — the store not yet reachable when this
@@ -171,11 +180,12 @@ def _worker_loop(
             else:
                 ask_connectors = connectors
 
-            is_follow_up, processing_question = resolve_follow_up(
-                question=question,
-                history=conversation_history,
-                llm=follow_up_llm,
-            )
+            with trace_context.span("follow_up_resolution"):
+                is_follow_up, processing_question = resolve_follow_up(
+                    question=question,
+                    history=conversation_history,
+                    llm=follow_up_llm,
+                )
             logger.info(
                 "Conversation context resolution: follow_up=%s processing_question=%s",
                 is_follow_up,
@@ -205,6 +215,7 @@ def _worker_loop(
             except Exception:  # noqa: BLE001
                 pass
         finally:
+            trace_scope.__exit__(None, None, None)
             try:
                 out_q.put((_TAG_DONE, None))
             except Exception:  # noqa: BLE001
@@ -246,6 +257,7 @@ class PrewarmedWorker:
         subject_token: str | None = None,
         conversation_history: list[dict[str, str | None]] | None = None,
         evidence: str | None = None,
+        trace: dict[str, Any] | None = None,
     ) -> None:
         """Ask *question*, optionally forcing the prediction/SQL branch.
 
@@ -257,6 +269,8 @@ class PrewarmedWorker:
         ones, so SQL executes under that user's own Databricks grants.
         *evidence* is optional authoritative evidence kept separate from
         the question.
+        *trace* is the turn's LLM trace context (``TraceContext.to_payload()``),
+        re-activated in the worker so its model calls are attributed to it.
         """
         self._in_q.put(
             (
@@ -268,6 +282,7 @@ class PrewarmedWorker:
                     subject_token,
                     conversation_history or [],
                     evidence,
+                    trace,
                 ),
             )
         )

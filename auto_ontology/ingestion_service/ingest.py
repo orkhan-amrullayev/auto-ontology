@@ -11,6 +11,7 @@ import time
 from contextlib import contextmanager
 from typing import Any, Iterator
 
+from auto_ontology.tracing import context as trace_context
 from auto_ontology.utils import get_embed_params
 from auto_ontology.utils.embedding import batch_embed_chunks
 from auto_ontology.utils.embedding_rows import (
@@ -101,6 +102,14 @@ def run_ingest(connector: SQLDatabase) -> None:
         raise ValueError("Connector is not set")
 
     database_name = connector.database_name
+    with trace_context.start_trace(
+        "ingest", database_name=database_name, title=f"Ingest · {database_name}"
+    ):
+        _run_ingest(connector, database_name)
+
+
+def _run_ingest(connector: SQLDatabase, database_name: str) -> None:
+    """Body of :func:`run_ingest`, run inside its LLM trace."""
     embed_params = get_embed_params()
 
     started = time.monotonic()

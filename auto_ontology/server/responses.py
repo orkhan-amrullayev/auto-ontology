@@ -18,6 +18,7 @@ API change.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Generic, TypeVar
 
 from auto_ontology.server.models import (
@@ -105,6 +106,10 @@ __all__ = [
     "RuleResponse",
     "SchemasPayload",
     "SemanticExplorationGraphResponse",
+    "TraceCall",
+    "TraceDetailResponse",
+    "TraceListResponse",
+    "TraceSummary",
     "SemanticRunningResponse",
     "SemanticStatusResponse",
     "SqlAttributeExplorationDetailsResponse",
@@ -215,6 +220,71 @@ class SemanticRunningResponse(_Payload):
     running: bool
     last_success_at: str | None
     last_failure_at: str | None
+
+
+class TraceSummary(_Payload):
+    trace_id: str
+    kind: str | None = None
+    title: str | None = None
+    user_id: str | None = None
+    user_email: str | None = None
+    user_name: str | None = None
+    conversation_id: str | None = None
+    source: str | None = None
+    database_name: str | None = None
+    started_at: datetime
+    ended_at: datetime | None = None
+    calls: int
+    llm_calls: int
+    embedding_calls: int
+    errors: int
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    models: list[str] = []
+
+
+class TraceListResponse(_Payload):
+    enabled: bool
+    items: list[TraceSummary]
+
+
+class TraceCall(_Payload):
+    """One recorded model request (a row of ``llm_trace_call``)."""
+
+    id: int
+    started_at: datetime
+    duration_ms: int | None = None
+    trace_id: str | None = None
+    kind: str | None = None
+    user_id: str | None = None
+    user_email: str | None = None
+    user_name: str | None = None
+    conversation_id: str | None = None
+    turn_id: str | None = None
+    source: str | None = None
+    database_name: str | None = None
+    title: str | None = None
+    spans: list[dict[str, Any]] = []
+    call: dict[str, Any] = {}
+    endpoint: str
+    method: str
+    upstream: str
+    path: str
+    model: str | None = None
+    streamed: bool = False
+    status_code: int | None = None
+    error: str | None = None
+    request: Any = None
+    response: Any = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+
+class TraceDetailResponse(_Payload):
+    trace_id: str
+    calls: list[TraceCall]
 
 
 class ChatCancelResponse(_Payload):

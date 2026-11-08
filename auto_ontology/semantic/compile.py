@@ -10,6 +10,7 @@ import logging
 import os
 import time
 
+from auto_ontology.tracing import context as trace_context
 from auto_ontology.semantic.bridge_tables import build_bridge_tables_sql_attributes
 from auto_ontology.semantic.cancellation import is_cancelled
 from auto_ontology.semantic.domain import DomainSummary, load_domain_summary
@@ -39,7 +40,14 @@ def run_semantic_compilation(
 
     Returns the number of tables processed.
     """
-    with limit_inflight(SEMANTIC_LLM_MAX_INFLIGHT):
+    with (
+        limit_inflight(SEMANTIC_LLM_MAX_INFLIGHT),
+        trace_context.start_trace(
+            "semantic_compilation",
+            database_name=database_name,
+            title=f"Semantic compilation · {database_name}",
+        ),
+    ):
         return _run_semantic_compilation(database_name, domain_summary=domain_summary)
 
 
@@ -61,11 +69,12 @@ def _run_semantic_compilation(
     )
     logger.info("=" * 60)
 
-    count = compile_semantic_layer(
-        database_name,
-        domain_summary=summary,
-        embedder=embedder,
-    )
+    with trace_context.span("compile_tables"):
+        count = compile_semantic_layer(
+            database_name,
+            domain_summary=summary,
+            embedder=embedder,
+        )
 
     logger.info("=" * 60)
     logger.info("Semantic compilation finished — %d table visits", count)
@@ -88,7 +97,8 @@ def _run_semantic_compilation(
     logger.info("=" * 60)
     logger.info("Resolving semantic FK edges…")
     logger.info("=" * 60)
-    fk_count = resolve_semantic_fks(database_name)
+    with trace_context.span("resolve_joins"):
+        fk_count = resolve_semantic_fks(database_name)
     logger.info("Semantic FK edges created: %d", fk_count)
 
     from auto_ontology.semantic.sql_attribute_suggester import suggest_sql_attributes
@@ -96,13 +106,15 @@ def _run_semantic_compilation(
     logger.info("=" * 60)
     logger.info("Suggesting SqlAttributes from query history…")
     logger.info("=" * 60)
-    attr_count = suggest_sql_attributes(database_name)
+    with trace_context.span("query_history_attributes"):
+        attr_count = suggest_sql_attributes(database_name)
     logger.info("New SqlAttribute nodes written: %d", attr_count)
 
     logger.info("=" * 60)
     logger.info("Building bridge tables sql attributes")
     logger.info("=" * 60)
-    bridge_table_count = build_bridge_tables_sql_attributes(database_name)
+    with trace_context.span("bridge_tables"):
+        bridge_table_count = build_bridge_tables_sql_attributes(database_name)
     logger.info("Bridge tables built: %d", bridge_table_count)
 
     # One line carrying every stage's result. Until now the last thing a

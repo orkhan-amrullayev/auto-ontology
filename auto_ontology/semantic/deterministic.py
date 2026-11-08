@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from auto_ontology.tracing.context import TracingThreadPoolExecutor
 from auto_ontology.semantic.date_format import is_date_type
 from auto_ontology.semantic.models import ColumnAttributeSpec, ColumnDescriptionResult
 from auto_ontology.utils.llm_invoke import (
@@ -205,7 +206,7 @@ def _generate_column_descriptions(
         return _describe_column_batch(batches[0], profiling)
 
     max_workers = min(len(batches), _DESCRIPTION_MAX_WORKERS)
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    with TracingThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = [
             pool.submit(_describe_column_batch, batch, profiling) for batch in batches
         ]

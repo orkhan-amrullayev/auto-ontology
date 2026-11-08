@@ -30,6 +30,7 @@ const applicationStatements = {
 	pii: ['read', 'manage'],
 	modelInterchange: ['export', 'import'],
 	apiToken: ['manage'],
+	trace: ['read'],
 } as const satisfies Record<string, readonly string[]>;
 
 type ApplicationStatements = typeof applicationStatements;

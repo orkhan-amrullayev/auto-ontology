@@ -27,6 +27,10 @@ const SEMANTIC_COMPILATION_NAV_ITEM: NavItem = {
 	label: 'Semantic Compilation',
 	href: '/settings/semantic-compilation',
 };
+const LLM_TRACING_NAV_ITEM: NavItem = {
+	label: 'LLM Tracing',
+	href: '/settings/llm-tracing',
+};
 const AGENT_SETTINGS_NAV_ITEM: NavItem = {
 	label: 'Agent Settings',
 	href: '/settings/agent-settings',
@@ -70,6 +74,7 @@ export const SettingsNav = ({ connectionsEnvManaged }: SettingsNavProps) => {
 		USERS_NAV_ITEM,
 		SSO_NAV_ITEM,
 		SEMANTIC_COMPILATION_NAV_ITEM,
+		LLM_TRACING_NAV_ITEM,
 		AGENT_SETTINGS_NAV_ITEM,
 		IMPORT_EXPORT_NAV_ITEM,
 	);

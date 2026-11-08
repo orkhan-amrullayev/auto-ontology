@@ -1116,6 +1116,60 @@ semantic_compilation_history = Table(
 
 
 # ---------------------------------------------------------------------------
+# LLM call tracing
+# ---------------------------------------------------------------------------
+#
+# One row per model request (chat, embedding, rerank) that went through the
+# trace proxy (`auto_ontology/llm_trace_proxy`), written by the proxy. Rows that
+# share a `trace_id` are one unit of work -- a chat turn, a semantic compilation
+# of one database, an ingest -- and `spans` places each call in that work's
+# pipeline (e.g. `[{"id": ..., "name": "construct_sql_from_candidates"}]`).
+#
+# Append-only and read newest-first, hence BIGSERIAL like
+# `semantic_compilation_history`. User ids are Better Auth ids from
+# `frontend."user"`, stored as plain Text like `tag.created_by`: Alembic does not
+# manage that schema, so there is no foreign key.
+llm_trace_call = Table(
+    "llm_trace_call",
+    METADATA,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    Column("duration_ms", Integer, nullable=True),
+    # -- the trace this call belongs to (from the X-AO-Trace header) --
+    Column("trace_id", Text, nullable=True),
+    Column("kind", Text, nullable=True),
+    Column("user_id", Text, nullable=True),
+    Column("conversation_id", Text, nullable=True),
+    Column("turn_id", Text, nullable=True),
+    Column("source", Text, nullable=True),
+    Column("database_name", Text, nullable=True),
+    Column("title", Text, nullable=True),
+    Column("spans", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    # Wrapper details: schema name, structured-output method, attempt, role...
+    Column("call", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # -- the request itself --
+    Column("endpoint", Text, nullable=False),  # chat | embedding | rerank | other
+    Column("method", Text, nullable=False),
+    Column("upstream", Text, nullable=False),
+    Column("path", Text, nullable=False),
+    Column("model", Text, nullable=True),
+    Column("streamed", Boolean, nullable=False, server_default=text("false")),
+    Column("status_code", Integer, nullable=True),
+    Column("error", Text, nullable=True),
+    # Bodies as JSON, with secrets never stored and embedding vectors dropped
+    # (see `llm_trace_proxy.redact`).
+    Column("request", JSONB, nullable=True),
+    Column("response", JSONB, nullable=True),
+    Column("prompt_tokens", Integer, nullable=True),
+    Column("completion_tokens", Integer, nullable=True),
+    Column("total_tokens", Integer, nullable=True),
+    Index("ix_llm_trace_call_trace_id", "trace_id"),
+    Index("ix_llm_trace_call_started_at", "started_at"),
+    Index("ix_llm_trace_call_conversation_id", "conversation_id"),
+)
+
+
+# ---------------------------------------------------------------------------
 # User groups
 # ---------------------------------------------------------------------------
 #
@@ -1416,6 +1470,7 @@ __all__ = [
     "sql_query",
     "sql_query__table",
     "sql_query__column",
+    "llm_trace_call",
     "semantic_compilation_history",
     "table__join",
     "table__term",
