@@ -10,6 +10,7 @@ import { SearchInput } from '@/common/SearchInput';
 import { Spinner } from '@/common/Spinner';
 import {
 	buildTraceTree,
+	embeddingDims,
 	embeddingInputs,
 	formatDuration,
 	formatTokens,
@@ -69,6 +70,84 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
 		{children}
 	</div>
 );
+
+const INPUTS_PAGE_SIZE = 10;
+
+/** One row per text sent in an embedding request, paged so a 32-text batch stays readable. */
+const EmbeddingInputsTable = ({ inputs, dims }: { inputs: string[]; dims: (number | null)[] }) => {
+	const [page, setPage] = useState(0);
+	const pages = Math.ceil(inputs.length / INPUTS_PAGE_SIZE);
+	const start = page * INPUTS_PAGE_SIZE;
+	const rows = inputs.slice(start, start + INPUTS_PAGE_SIZE);
+	return (
+		<div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+			<div className="overflow-x-auto">
+				<table className="w-full text-left text-xs">
+					<thead className="text-[11px] text-secondary uppercase">
+						<tr className="border-b border-zinc-200 dark:border-zinc-700">
+							<th className="w-10 px-2 py-1.5 font-semibold">#</th>
+							<th className="px-2 py-1.5 font-semibold">Text</th>
+							<th className="w-16 px-2 py-1.5 text-right font-semibold">Chars</th>
+							<th className="w-16 px-2 py-1.5 text-right font-semibold">Dims</th>
+						</tr>
+					</thead>
+					<tbody>
+						{rows.map((text, offset) => {
+							const index = start + offset;
+							return (
+								<tr
+									key={index}
+									className="border-b border-zinc-100 align-top last:border-b-0 dark:border-zinc-800"
+								>
+									<td className="px-2 py-1.5 text-secondary tabular-nums">
+										{index + 1}
+									</td>
+									<td className="px-2 py-1.5 font-mono break-words whitespace-pre-wrap text-heading dark:text-zinc-200">
+										{text}
+									</td>
+									<td className="px-2 py-1.5 text-right text-secondary tabular-nums">
+										{text.length.toLocaleString()}
+									</td>
+									<td className="px-2 py-1.5 text-right text-secondary tabular-nums">
+										{dims[index] ?? '—'}
+									</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			</div>
+			{pages > 1 && (
+				<div className="flex items-center justify-between gap-2 border-t border-zinc-200 px-2 py-1.5 text-xs text-secondary dark:border-zinc-700">
+					<span className="tabular-nums">
+						{start + 1}–{start + rows.length} of {inputs.length}
+					</span>
+					<div className="flex items-center gap-1">
+						<button
+							type="button"
+							onClick={() => setPage((value) => value - 1)}
+							disabled={page === 0}
+							className="cursor-pointer rounded px-2 py-0.5 font-medium text-heading hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-800"
+						>
+							Previous
+						</button>
+						<span className="tabular-nums">
+							Page {page + 1} / {pages}
+						</span>
+						<button
+							type="button"
+							onClick={() => setPage((value) => value + 1)}
+							disabled={page >= pages - 1}
+							className="cursor-pointer rounded px-2 py-0.5 font-medium text-heading hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-800"
+						>
+							Next
+						</button>
+					</div>
+				</div>
+			)}
+		</div>
+	);
+};
 
 const CallDetail = ({ call }: { call: TraceCall }) => {
 	const messages = requestMessages(call.request);
@@ -134,8 +213,8 @@ const CallDetail = ({ call }: { call: TraceCall }) => {
 			)}
 
 			{inputs.length > 0 && (
-				<Section title={`Embedded texts (${inputs.length})`}>
-					<JsonBlock value={inputs.slice(0, 20).join('\n')} />
+				<Section title={`Embedded texts (${inputs.length} in this request)`}>
+					<EmbeddingInputsTable inputs={inputs} dims={embeddingDims(call.response)} />
 				</Section>
 			)}
 
@@ -242,8 +321,14 @@ const CallRow = ({ call }: { call: TraceCall }) => {
 	);
 };
 
+// Children shown per step before "Show more": an ingest can make dozens of
+// near-identical embedding batches under one step.
+const CHILDREN_PAGE_SIZE = 10;
+
 const TreeNode = ({ node, depth }: { node: TraceTreeNode; depth: number }) => {
 	const [open, setOpen] = useState(depth < 2);
+	const [visible, setVisible] = useState(CHILDREN_PAGE_SIZE);
+	const hidden = node.children.length - visible;
 	return (
 		<div className={depth > 0 ? 'ml-3 border-l border-zinc-200 pl-3 dark:border-zinc-700' : ''}>
 			{depth > 0 && (
@@ -266,12 +351,35 @@ const TreeNode = ({ node, depth }: { node: TraceTreeNode; depth: number }) => {
 			)}
 			{open && (
 				<div className="flex flex-col gap-1.5 pb-1">
-					{node.children.map((child) =>
-						isCall(child) ? (
-							<CallRow key={`call-${child.id}`} call={child} />
-						) : (
-							<TreeNode key={child.id} node={child} depth={depth + 1} />
-						),
+					{node.children
+						.slice(0, visible)
+						.map((child) =>
+							isCall(child) ? (
+								<CallRow key={`call-${child.id}`} call={child} />
+							) : (
+								<TreeNode key={child.id} node={child} depth={depth + 1} />
+							),
+						)}
+					{hidden > 0 && (
+						<div className="flex items-center gap-3 px-1 py-1 text-xs">
+							<span className="text-secondary tabular-nums">
+								Showing {visible} of {node.children.length}
+							</span>
+							<button
+								type="button"
+								onClick={() => setVisible((value) => value + CHILDREN_PAGE_SIZE)}
+								className="cursor-pointer font-medium text-[#4f7a00] hover:underline dark:text-[#9fdc3a]"
+							>
+								Show {Math.min(hidden, CHILDREN_PAGE_SIZE)} more
+							</button>
+							<button
+								type="button"
+								onClick={() => setVisible(node.children.length)}
+								className="cursor-pointer font-medium text-[#4f7a00] hover:underline dark:text-[#9fdc3a]"
+							>
+								Show all
+							</button>
+						</div>
 					)}
 				</div>
 			)}

@@ -98,6 +98,19 @@ export const embeddingInputs = (request: unknown): string[] => {
 	return Array.isArray(input) ? input.map((item) => contentText(item)) : [];
 };
 
+/** Vector size returned for each input of an embedding response (the proxy keeps sizes, not vectors). */
+export const embeddingDims = (response: unknown): (number | null)[] => {
+	const data = asObject(response)?.data;
+	if (!Array.isArray(data)) return [];
+	const dims: (number | null)[] = [];
+	for (const item of data) {
+		const obj = asObject(item);
+		const index = typeof obj?.index === 'number' ? obj.index : dims.length;
+		dims[index] = typeof obj?.embedding_dims === 'number' ? obj.embedding_dims : null;
+	}
+	return dims;
+};
+
 /** The structured-output contract a request asked for (Pydantic -> JSON schema). */
 export const requestSchemas = (request: unknown): OutputSchema[] => {
 	const body = asObject(request);
