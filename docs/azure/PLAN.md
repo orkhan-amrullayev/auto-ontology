@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, Orkhan Amrullayev.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Auto-Ontology on all-Azure: effort estimate
 
 ## Context
