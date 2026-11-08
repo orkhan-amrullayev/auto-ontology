@@ -64,3 +64,21 @@ The OpenAPI one is the easy one to miss: `docs/openapi/backend.json` and
 Editing a docstring on any `@router` handler — not just changing a signature or
 model — makes the committed spec stale and fails "Backend spec is up to date".
 Regenerate and commit the result whenever a route's code or docs change.
+
+## Fork: Azure port (orkhan-amrullayev/auto-ontology)
+
+Read this before every session. This checkout is a fork of `NVIDIA/auto-ontology`
+being adapted to run fully on Azure (Azure OpenAI, Azure Database for PostgreSQL,
+Key Vault, Entra ID). Plan and effort estimate: `docs/azure/PLAN.md`.
+
+- Remotes: `origin` = `orkhan-amrullayev/auto-ontology` (push here),
+  `upstream` = `NVIDIA/auto-ontology` (fetch only; sync with
+  `git fetch upstream && git rebase upstream/main`).
+- Keep Azure changes behind env flags and in as few files as possible so
+  upstream rebases stay cheap.
+- **Commit messages must not mention any LLM / AI author or co-author** — no
+  `Co-Authored-By`, no "Generated with" lines, no tool names. Write the message
+  about the value the change brings (what it enables or fixes and why), in
+  concise imperative style.
+- Commit as `Orkhan Amrullayev <64093617+orkhan-amrullayev@users.noreply.github.com>`
+  (set in this repo's local git config).
