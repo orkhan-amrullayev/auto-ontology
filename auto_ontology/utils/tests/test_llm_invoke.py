@@ -497,3 +497,33 @@ def test_missing_reasoning_client_keeps_the_original_failure(monkeypatch: Any) -
     monkeypatch.setattr(llm_invoke, "get_llm_client", unavailable)
 
     assert llm_invoke.invoke_with_structured_output(primary, [], _Schema) is None
+
+
+def test_an_azure_openai_deployment_uses_chat_openai_without_a_prefix() -> None:
+    from langchain_openai import ChatOpenAI
+
+    client = llm_invoke._build_client(
+        model="gpt-5-mini",
+        api_key="azure-key",
+        base_url="https://my-res.openai.azure.com/openai/v1/",
+        temperature=0.0,
+        max_tokens=256,
+    )
+
+    assert isinstance(client, ChatOpenAI)
+    assert client.model_name == "gpt-5-mini"
+    assert str(client.openai_api_base).startswith("https://my-res.openai.azure.com")
+
+
+def test_an_unprefixed_model_on_a_nim_endpoint_keeps_chat_nvidia() -> None:
+    from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+    client = llm_invoke._build_client(
+        model="nvidia/nemotron-3.5-lightning-30b-a3b",
+        api_key="nvapi-test",
+        base_url="https://integrate.api.nvidia.com/v1",
+        temperature=0.0,
+        max_tokens=256,
+    )
+
+    assert isinstance(client, ChatNVIDIA)

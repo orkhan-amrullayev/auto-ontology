@@ -68,3 +68,29 @@ def test_an_explicit_setting_wins_over_the_default(
     clean_env.setenv("REASONING_MODEL", "nvidia/some-other-model")
 
     assert model_config.resolve("REASONING", "MODEL") == "nvidia/some-other-model"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://my-res.openai.azure.com/openai/v1/",
+        "https://my-res.cognitiveservices.azure.com/openai/v1",
+        "https://my-proj.services.ai.azure.com/models",
+        "https://MY-RES.OPENAI.AZURE.COM/openai/v1",
+    ],
+)
+def test_azure_openai_endpoints_are_recognised(url: str) -> None:
+    assert model_config.is_azure_openai_endpoint(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://integrate.api.nvidia.com/v1",
+        "https://inference-api.nvidia.com/v1",
+        "https://openai.azure.com.evil.example/v1",
+        "",
+    ],
+)
+def test_other_endpoints_are_not_azure_openai(url: str) -> None:
+    assert not model_config.is_azure_openai_endpoint(url)

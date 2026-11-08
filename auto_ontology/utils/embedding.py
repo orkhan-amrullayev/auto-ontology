@@ -14,6 +14,11 @@ Some deployments ignore ``input_type`` (see ``_TEXT_PREFIXED_MODELS``); for
 those the type is written into the text as a ``query: `` / ``passage: ``
 prefix, the instruction the model was trained with.
 
+Azure OpenAI endpoints (see :func:`is_azure_openai_endpoint`) get none of the
+NVIDIA fields -- they reject unknown body fields -- and are asked for
+``EMBED_DIMENSIONS`` dimensions (default 2048, the vector store's column size;
+``text-embedding-3-large`` supports it via its ``dimensions`` parameter).
+
 Ingest and query MUST use the same model; a mismatch produces garbage results
 or a dimension error from pgvector.
 """
@@ -23,6 +28,7 @@ from __future__ import annotations
 import itertools
 import logging
 import math
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -32,7 +38,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
 import httpx
 from openai import APIStatusError, Omit, OpenAI
 
-from auto_ontology.utils.model_config import resolve
+from auto_ontology.utils.model_config import is_azure_openai_endpoint, resolve
 from auto_ontology.vdb.records import write_embedded_rows
 
 if TYPE_CHECKING:
@@ -56,6 +62,12 @@ _TEXT_PREFIXED_MODELS = ("nemotron-3.5-embed-1b-nvfp4",)
 _EMBED_ENDPOINT = resolve("EMBED", "ENDPOINT")
 _EMBED_MODEL = resolve("EMBED", "MODEL")
 _EMBED_API_KEY = resolve("EMBED", "API_KEY")
+
+# Output dimensions requested from models that support truncating their vector
+# (OpenAI ``text-embedding-3-*``). Unset means "don't ask" for NVIDIA endpoints
+# and 2048 -- the size of the vector store's column -- for Azure OpenAI.
+_AZURE_DEFAULT_DIMENSIONS = 2048
+_EMBED_DIMENSIONS = os.environ.get("EMBED_DIMENSIONS", "").strip()
 
 # Per-request retries inside the client, for 408/409/429/5xx and dropped
 # connections. They back off for seconds; the chunk-level retry below is the
@@ -96,6 +108,7 @@ class EmbedParams:
     inference_batch_size: int = 32
     nim_http_max_concurrent: int = 32
     request_timeout_s: float = 600.0
+    dimensions: int | None = None
 
 
 def get_embed_params() -> EmbedParams:
@@ -103,7 +116,16 @@ def get_embed_params() -> EmbedParams:
         embed_invoke_url=_EMBED_ENDPOINT,
         model_name=_EMBED_MODEL,
         api_key=_EMBED_API_KEY,
+        dimensions=_default_dimensions(_EMBED_ENDPOINT),
     )
+
+
+def _default_dimensions(endpoint: str) -> int | None:
+    if _EMBED_DIMENSIONS:
+        return int(_EMBED_DIMENSIONS)
+    if is_azure_openai_endpoint(endpoint):
+        return _AZURE_DEFAULT_DIMENSIONS
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -182,20 +204,27 @@ def embed_texts(
     if retries is not None:
         client = client.with_options(max_retries=retries)
     batches = list(itertools.batched(to_send, max(1, params.inference_batch_size)))
-    prefix = _text_prefix(params.model_name, input_type)
+    azure = is_azure_openai_endpoint(params.embed_invoke_url)
+    prefix = "" if azure else _text_prefix(params.model_name, input_type)
+    extra: dict[str, Any] = {}
+    if not azure:
+        # NVIDIA-only fields; Azure OpenAI rejects unknown body fields.
+        extra["extra_body"] = {
+            "input_type": input_type,
+            "truncate": "END",
+            "modality": params.embed_modality,
+        }
+    if params.dimensions is not None:
+        extra["dimensions"] = params.dimensions
 
     def _embed_batch(indices: tuple[int, ...]) -> None:
         response = client.embeddings.create(
             model=params.model_name,
             input=[prefix + stripped[i] for i in indices],
             encoding_format="float",
-            extra_body={
-                "input_type": input_type,
-                "truncate": "END",
-                "modality": params.embed_modality,
-            },
             timeout=timeout or params.request_timeout_s,
             extra_headers=None if params.api_key else _NO_AUTH,
+            **extra,
         )
         returned = [item.index for item in response.data]
         if sorted(returned) != list(range(len(indices))):

@@ -142,6 +142,62 @@ def test_the_hosted_nemotron_3_5_model_gets_input_type_without_a_prefix(
     assert body["input_type"] == "query"
 
 
+_AZURE = "https://my-res.openai.azure.com/openai/v1"
+
+
+@pytest.mark.parametrize("input_type", ["passage", "query"])
+def test_azure_openai_gets_no_nvidia_fields_and_the_column_dimensions(
+    endpoint, input_type: str
+) -> None:
+    seen = endpoint(_ok)
+
+    embed_texts(
+        ["  orders  "],
+        _params(
+            model_name="text-embedding-3-large",
+            embed_invoke_url=_AZURE,
+            dimensions=embedding._default_dimensions(_AZURE),
+        ),
+        input_type,
+    )
+
+    [request] = seen
+    assert request.url.path == "/openai/v1/embeddings"
+    assert json.loads(request.content) == {
+        "model": "text-embedding-3-large",
+        "input": ["orders"],
+        "encoding_format": "float",
+        "dimensions": 2048,
+    }
+
+
+def test_azure_openai_skips_the_text_prefix_even_for_a_prefixed_model(
+    endpoint,
+) -> None:
+    seen = endpoint(_ok)
+
+    embed_texts(
+        ["orders"],
+        _params(model_name="nemotron-3.5-embed-1b-nvfp4", embed_invoke_url=_AZURE),
+        "query",
+    )
+
+    assert json.loads(seen[0].content)["input"] == ["orders"]
+
+
+def test_nvidia_endpoints_ask_for_no_dimensions_by_default() -> None:
+    assert embedding._default_dimensions("https://integrate.api.nvidia.com/v1") is None
+
+
+def test_embed_dimensions_overrides_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(embedding, "_EMBED_DIMENSIONS", "1024")
+
+    assert embedding._default_dimensions(_AZURE) == 1024
+    assert embedding._default_dimensions("https://integrate.api.nvidia.com/v1") == 1024
+
+
 @pytest.mark.parametrize(
     "configured",
     [

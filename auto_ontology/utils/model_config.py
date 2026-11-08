@@ -21,6 +21,23 @@ applies to the same triplet.
 from __future__ import annotations
 
 import os
+from urllib.parse import urlparse
+
+# Hostname suffixes of Azure OpenAI / Azure AI Foundry endpoints. These speak the
+# OpenAI API (the ``/openai/v1/`` surface) but take a *deployment name* as the
+# model and reject NVIDIA-specific request fields.
+_AZURE_OPENAI_HOST_SUFFIXES = (
+    ".openai.azure.com",
+    ".cognitiveservices.azure.com",
+    ".services.ai.azure.com",
+)
+
+
+def is_azure_openai_endpoint(url: str) -> bool:
+    """Whether *url* points at an Azure OpenAI / Azure AI Foundry endpoint."""
+    host = (urlparse(url).hostname or "").lower()
+    return host.endswith(_AZURE_OPENAI_HOST_SUFFIXES)
+
 
 # Built-in endpoint/model defaults, selected by the triplet's API key prefix.
 # Keyed by ``<PREFIX>_<FIELD>``. API keys are intentionally absent (they have no

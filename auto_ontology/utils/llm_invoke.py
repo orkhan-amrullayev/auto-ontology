@@ -18,7 +18,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
-from auto_ontology.utils.model_config import resolve
+from auto_ontology.utils.model_config import is_azure_openai_endpoint, resolve
 
 logger = logging.getLogger(__name__)
 
@@ -222,10 +222,14 @@ def _build_client(
     """Build a chat client for the given model/endpoint.
 
     OpenAI-family models (``openai/``, ``azure/``, ``aws/`` prefixes) go through
-    ``ChatOpenAI``, which supports structured output. Everything else uses
-    ``ChatNVIDIA``.
+    ``ChatOpenAI``, which supports structured output. So does any model served
+    from an Azure OpenAI endpoint (e.g. ``https://<res>.openai.azure.com/openai/v1/``),
+    where *model* is the deployment name and needs no prefix. Everything else
+    uses ``ChatNVIDIA``.
     """
-    if model.startswith(("openai/", "azure/", "aws/")):
+    if model.startswith(("openai/", "azure/", "aws/")) or is_azure_openai_endpoint(
+        base_url
+    ):
         from langchain_openai import ChatOpenAI
 
         return ChatOpenAI(
